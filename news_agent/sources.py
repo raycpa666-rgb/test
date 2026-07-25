@@ -182,13 +182,20 @@ def load_json_file(path: str) -> list[Article]:
 
 
 def dedupe(articles: list[Article]) -> list[Article]:
-    """Drop repeats of the same story (same URL, or same headline + publisher)."""
+    """Drop repeats of the same story.
+
+    Keys on the URL and on the normalized headline alone — deliberately *not*
+    headline+publisher. Wire stories are republished verbatim under many
+    mastheads, so including the publisher let the same CNN piece appear again
+    under WLKY. Two genuinely different articles sharing a headline character
+    for character are rare enough that collapsing them is the better trade.
+    """
     seen_urls: set[str] = set()
-    seen_titles: set[tuple[str, str]] = set()
+    seen_titles: set[str] = set()
     unique: list[Article] = []
     for article in articles:
-        title_key = (re.sub(r"[^a-z0-9]+", "", article.title.lower()), article.source.lower())
-        if article.url in seen_urls or title_key in seen_titles:
+        title_key = re.sub(r"[^a-z0-9]+", "", article.title.lower())
+        if article.url in seen_urls or (title_key and title_key in seen_titles):
             continue
         seen_urls.add(article.url)
         seen_titles.add(title_key)

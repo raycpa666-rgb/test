@@ -70,6 +70,15 @@ class TestFeedParsing(unittest.TestCase):
         deduped = sources.dedupe(articles + articles)
         self.assertEqual(len(deduped), 2)
 
+    def test_dedupe_collapses_syndicated_copies(self):
+        # The same wire story ran under CNN and WLKY with different URLs.
+        headline = "Historically low water level in two crucial US reservoirs"
+        syndicated = [
+            Article(title=headline, url="https://cnn.example/a", source="CNN"),
+            Article(title=headline, url="https://wlky.example/b", source="WLKY"),
+        ]
+        self.assertEqual(len(sources.dedupe(syndicated)), 1)
+
     def test_bad_xml_returns_empty(self):
         self.assertEqual(sources.parse_feed(b"not xml", "Lake Mead"), [])
 
@@ -128,6 +137,24 @@ class TestTermMatching(unittest.TestCase):
     def test_real_negative_term_still_penalizes(self):
         article = make_article("Lake Mead casino expansion", "The casino adds a restaurant.")
         self.assertIn("penalized", relevance.heuristic_assess(article).reason)
+
+    def test_overlapping_terms_count_once(self):
+        # "hoover dam" subsumes "dam" — one signal, not two. This WWII history
+        # piece ranked #1 for Lake Mead before the fix.
+        article = make_article(
+            "Did the Nazis Really Try to Blow Up the Hoover Dam?",
+            "A wartime plot against the landmark.",
+        )
+        assessment = relevance.heuristic_assess(article)
+        self.assertFalse(assessment.is_hydrology)
+        self.assertNotIn("dam,", assessment.reason.replace("hoover dam,", ""))
+
+    def test_genuine_hoover_dam_story_still_passes(self):
+        article = make_article(
+            "What does low water at the Hoover Dam mean for power in the West?",
+            "Reservoir elevation is nearing minimum power pool as storage falls.",
+        )
+        self.assertTrue(relevance.heuristic_assess(article).is_hydrology)
 
 
 class TestJsonSource(unittest.TestCase):

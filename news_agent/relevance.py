@@ -85,6 +85,13 @@ NEGATIVE_TERMS: dict[str, float] = {
     "recipe": 2.0,
     "body found": 1.5,
     "crash": 1.0,
+    # Landmarks on the river attract history and travel writing that has
+    # nothing to do with water resources.
+    "nazi": 3.0,
+    "world war": 3.0,
+    "hitler": 3.0,
+    "tourist": 1.5,
+    "haunted": 2.0,
 }
 
 # Score at which the heuristic calls an article hydrology-related.
@@ -101,10 +108,27 @@ _STRONG_RE = _compile(STRONG_TERMS)
 _NEGATIVE_RE = _compile(NEGATIVE_TERMS)
 
 
+def _drop_subsumed(hits: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """Keep only the most specific of overlapping terms.
+
+    "Did the Nazis Really Try to Blow Up the Hoover Dam?" matched both
+    "hoover dam" and "dam", and the two weights summed past the threshold.
+    A phrase and the word inside it are one signal, not two.
+    """
+    terms = [term for term, _ in hits]
+    return [
+        (term, weight)
+        for term, weight in hits
+        if not any(other != term and term in other for other in terms)
+    ]
+
+
 def heuristic_assess(article: Article) -> Assessment:
     """Score an article on hydrology vocabulary alone (no network calls)."""
     blob = article.text_blob()
-    hits = [(term, weight) for term, weight in STRONG_TERMS.items() if _STRONG_RE[term].search(blob)]
+    hits = _drop_subsumed(
+        [(term, weight) for term, weight in STRONG_TERMS.items() if _STRONG_RE[term].search(blob)]
+    )
     penalties = [
         (term, weight) for term, weight in NEGATIVE_TERMS.items() if _NEGATIVE_RE[term].search(blob)
     ]

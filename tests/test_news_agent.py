@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from news_agent import emailer, relevance, sources, summarize  # noqa: E402
+from news_agent import agent, emailer, relevance, sources, summarize  # noqa: E402
 from news_agent.config import Config  # noqa: E402
 from news_agent.models import Article, Assessment, Digest, DigestSection  # noqa: E402
 
@@ -171,6 +171,64 @@ class TestSummaryFallback(unittest.TestCase):
         overall, used = summarize.summarize([DigestSection(keyword="Lake Mead")], model="x", use_llm=True)
         self.assertFalse(used)
         self.assertIn("No hydrology-related articles", overall)
+
+
+class TestWindowWidening(unittest.TestCase):
+    """The 1d window often can't fill 5 slots; the agent should widen it."""
+
+    def setUp(self):
+        self.calls: list[str] = []
+        self._real_search = sources.search
+
+        # Only the 7d window has enough hydrology articles to fill the quota.
+        def fake_search(keyword, window="1d", limit=30, timeout=20.0):
+            self.calls.append(window)
+            counts = {"1d": 1, "3d": 2, "7d": 6}
+            return [
+                Article(
+                    title=f"{keyword} reservoir storage and snowpack runoff update {i}",
+                    url=f"https://example.com/{window}/{i}",
+                    source="Example",
+                    snippet="Streamflow forecasts and reservoir storage.",
+                    keyword=keyword,
+                )
+                for i in range(counts[window])
+            ]
+
+        sources.search = fake_search
+        agent.sources.search = fake_search
+
+    def tearDown(self):
+        sources.search = self._real_search
+        agent.sources.search = self._real_search
+
+    def _config(self, **overrides):
+        base = dict(
+            keywords=["Lake Mead"], per_keyword=5, use_llm=False, resolve_links=False
+        )
+        base.update(overrides)
+        return Config(**base)
+
+    def test_widens_until_quota_is_met(self):
+        digest = agent.run(self._config())
+        self.assertEqual(self.calls, ["1d", "3d", "7d"])
+        self.assertEqual(len(digest.sections[0].assessments), 5)
+
+    def test_stops_widening_once_satisfied(self):
+        digest = agent.run(self._config(per_keyword=1))
+        self.assertEqual(self.calls, ["1d"])
+        self.assertEqual(len(digest.sections[0].assessments), 1)
+
+    def test_no_widen_honours_the_requested_window(self):
+        digest = agent.run(self._config(fallback_windows=[]))
+        self.assertEqual(self.calls, ["1d"])
+        self.assertEqual(len(digest.sections[0].assessments), 1)
+
+    def test_already_seen_articles_are_not_reassessed(self):
+        # 7d returns 6 unique URLs; 1d and 3d contribute 1 and 2 more.
+        digest = agent.run(self._config(per_keyword=99))
+        urls = {a.article.url for a in digest.sections[0].assessments}
+        self.assertEqual(len(urls), 9)
 
 
 class TestEmail(unittest.TestCase):

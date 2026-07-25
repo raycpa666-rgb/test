@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from .config import Config
-from .models import Article, Digest, DigestSection
+from .models import Article, Assessment, Digest, DigestSection
 from . import relevance, sources, summarize
 
 log = logging.getLogger(__name__)
@@ -33,6 +33,41 @@ def _load_candidates(config: Config) -> dict[str, list[Article]]:
     return grouped
 
 
+def _search_and_assess(config: Config, keyword: str) -> tuple[list[Assessment], bool]:
+    """Search and assess, widening the time window until enough articles qualify.
+
+    An exact-phrase search over 24 hours frequently returns fewer than
+    `per_keyword` hydrology articles — especially for a narrower phrase like
+    "Lake Mead". Rather than ship a short digest, fall back to progressively
+    wider windows. Articles already assessed are never re-assessed.
+    """
+    windows = [config.window] + [w for w in config.fallback_windows if w != config.window]
+    seen: set[str] = set()
+    assessments: list[Assessment] = []
+    llm_used = False
+
+    for position, window in enumerate(windows):
+        found = sources.dedupe(
+            sources.search(keyword, window=window, limit=config.max_candidates)
+        )
+        fresh = [article for article in found if article.url not in seen]
+        seen.update(article.url for article in fresh)
+        log.info("%r: %d candidates in %s window (%d new)", keyword, len(found), window, len(fresh))
+
+        if fresh:
+            new, used = relevance.assess(fresh, model=config.model, use_llm=config.use_llm)
+            llm_used = llm_used or used
+            assessments.extend(new)
+
+        qualifying = sum(1 for a in assessments if a.is_hydrology)
+        log.info("%r: %d hydrology-related so far", keyword, qualifying)
+        if qualifying >= config.per_keyword or position == len(windows) - 1:
+            break
+        log.info("%r: fewer than %d found; widening the search window", keyword, config.per_keyword)
+
+    return assessments, llm_used
+
+
 def run(config: Config) -> Digest:
     """Build today's digest for every configured keyword."""
     sections: list[DigestSection] = []
@@ -40,23 +75,22 @@ def run(config: Config) -> Digest:
     from_file = _load_candidates(config) if config.articles_file else None
 
     for keyword in config.keywords:
-        # 1. Gather the day's news.
+        # 1. Gather the day's news and 2. assess hydrology relevance.
         if from_file is not None:
             articles = sources.dedupe(from_file.get(keyword, []))[: config.max_candidates]
-        else:
-            articles = sources.dedupe(
-                sources.search(keyword, window=config.window, limit=config.max_candidates)
+            log.info("%r: %d candidate articles", keyword, len(articles))
+            if not articles:
+                sections.append(DigestSection(keyword=keyword))
+                continue
+            assessments, used = relevance.assess(
+                articles, model=config.model, use_llm=config.use_llm
             )
-        log.info("%r: %d candidate articles", keyword, len(articles))
-        if not articles:
+        else:
+            assessments, used = _search_and_assess(config, keyword)
+        llm_used = llm_used or used
+        if not assessments:
             sections.append(DigestSection(keyword=keyword))
             continue
-
-        # 2. Assess hydrology relevance.
-        assessments, used = relevance.assess(articles, model=config.model, use_llm=config.use_llm)
-        llm_used = llm_used or used
-        kept = sum(1 for a in assessments if a.is_hydrology)
-        log.info("%r: %d/%d judged hydrology-related", keyword, kept, len(assessments))
 
         # 3. Keep the top N.
         selected = relevance.select(

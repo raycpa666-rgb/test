@@ -27,7 +27,7 @@ draft before anything leaves your machine.
 
 | Step | What happens |
 | --- | --- |
-| **1. Search** | Google News RSS, exact-phrase, time-boxed with `when:1d`. No API key needed. Results are de-duplicated by URL and by headline+publisher. |
+| **1. Search** | Google News RSS, exact-phrase, time-boxed with `when:1d`. No API key needed. Results are de-duplicated by URL and by headline+publisher. If a keyword yields fewer than `--per-keyword` hydrology articles in 24 hours, the search widens to 3 days, then 7 — already-assessed articles are never re-assessed. Disable with `--no-widen`. |
 | **2. Assess** | Claude (`claude-opus-5`) judges each headline+snippet against a hydrology definition and returns `is_hydrology`, a 0–1 confidence, a topic label, and a one-line reason. Policy and litigation stories count when they concern water supply, allocation, or reservoir operations; a casino near Lake Mead or a boat crash does not. |
 | **3. Select** | Top 5 hydrology articles per keyword by confidence, then recency. If fewer than 5 clear the confidence bar, the next-best fill the slots so a thin news day still yields 5. |
 | **4. Summarize** | One Claude call writes an overall summary, a per-keyword summary, and a one-clause takeaway per article — grounded only in the snippets, with no invented numbers. |
@@ -42,7 +42,8 @@ and it means a Claude outage degrades the digest instead of breaking it.
 ```
 -k, --keyword KEYWORD      Search keyword; repeatable (default: Colorado River, Lake Mead)
 -n, --per-keyword N        Articles to select per keyword (default: 5)
-    --window 1d            How far back to search: 1d, 2d, 7d ...
+    --window 1d            How far back to search first: 1d, 2d, 7d ...
+    --no-widen             Never widen the window, even if a keyword comes up short
     --max-candidates N     Max search results assessed per keyword (default: 30)
     --articles-file PATH   Read candidates from JSON instead of searching the web
     --model ID             Claude model id (default: claude-opus-5)
@@ -110,6 +111,9 @@ python -m unittest discover -s tests -v
   `--max-candidates` helps more than lowering the confidence bar.
 - Google News RSS returns roughly the last 100 results per query and rate-limits heavy
   polling; once a day per keyword is comfortably within that.
+- A 24-hour window on a narrow phrase can genuinely have fewer than 5 hydrology stories.
+  The window widens to 3 then 7 days to fill the quota, so on a quiet day some articles
+  in the digest will be up to a week old. Their publication dates are always shown.
 - Publisher-link resolution is best-effort. When Google's interstitial can't be
   unwrapped, the `news.google.com` link is kept — it still opens correctly in a browser.
 - Summaries are grounded in snippets, not full articles. Treat them as triage, and open

@@ -29,6 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="How far back to search, e.g. 1d, 2d, 7d (default: 1d).")
     parser.add_argument("--max-candidates", type=int, default=30,
                         help="Max search results to assess per keyword (default: 30).")
+    parser.add_argument("--no-widen", action="store_true",
+                        help="Don't widen the time window when a keyword yields fewer than "
+                             "--per-keyword hydrology articles. Strictly honours --window.")
     parser.add_argument("--articles-file", default=None, metavar="PATH",
                         help="Read candidate articles from a JSON file instead of searching "
                              "the web. Use this to plug in another search backend, or where "
@@ -62,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     config.max_candidates = args.max_candidates
     config.use_llm = not args.no_llm
     config.resolve_links = not args.no_resolve_links
+    if args.no_widen:
+        config.fallback_windows = []
     config.send = args.send
     config.articles_file = args.articles_file
     if args.articles_file and not args.keywords:

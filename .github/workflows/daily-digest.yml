@@ -1,0 +1,50 @@
+name: Daily hydrology news digest
+
+on:
+  schedule:
+    # 13:00 UTC ≈ 6am Pacific / 7am Mountain.
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "Send the email (otherwise draft only)"
+        type: boolean
+        default: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Build and send digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send }}" != "true" ]; then
+            python -m news_agent --quiet
+          else
+            python -m news_agent --send --quiet
+          fi
+
+      - name: Upload digest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ github.run_id }}
+          path: |
+            digest.txt
+            digest.html
+          if-no-files-found: ignore

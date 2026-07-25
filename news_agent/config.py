@@ -33,6 +33,10 @@ class Config:
     per_keyword: int = 5
     max_candidates: int = 30
     window: str = "1d"  # Google News `when:` filter — 1d, 2d, 7d ...
+    # A 24-hour window on an exact phrase often yields fewer than `per_keyword`
+    # hydrology articles. When that happens, re-search over these wider windows
+    # rather than shipping a short digest.
+    fallback_windows: list[str] = field(default_factory=lambda: ["3d", "7d"])
     resolve_links: bool = True
     # Optional: read candidates from a JSON file instead of searching the web.
     articles_file: str | None = None

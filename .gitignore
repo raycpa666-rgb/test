@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+digest.txt
+digest.html
+*.egg-info/

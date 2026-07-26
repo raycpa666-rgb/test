@@ -95,13 +95,22 @@ NEGATIVE_TERMS: dict[str, float] = {
 }
 
 # Score at which the heuristic calls an article hydrology-related.
-HEURISTIC_THRESHOLD = 2.5
+#
+# Deliberately low, because the search phrase is itself a water body: an
+# article matching "Lake Mead" is already likely to be about water, so it
+# needs less corroborating vocabulary than a bare topic search would. Google
+# News snippets are frequently one thin sentence, and at 2.5 genuine stories
+# whose only hydrology term was in the headline were being dropped. The
+# negative-term list is what keeps landmark trivia out, not the threshold.
+HEURISTIC_THRESHOLD = 2.0
 
 
 def _compile(terms: dict[str, float]) -> dict[str, re.Pattern[str]]:
     # Word boundaries matter: without them "nfl" matches inside "inflow"
-    # and "dam" matches inside "damage".
-    return {term: re.compile(rf"\b{re.escape(term)}\b") for term in terms}
+    # and "dam" matches inside "damage". The optional trailing "s" matters
+    # just as much in the other direction — a bare \bterm\b misses every
+    # plural, so "reservoirs", "aquifers", and "dams" all scored zero.
+    return {term: re.compile(rf"\b{re.escape(term)}s?\b") for term in terms}
 
 
 _STRONG_RE = _compile(STRONG_TERMS)

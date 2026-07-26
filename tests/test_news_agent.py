@@ -213,7 +213,9 @@ class TestWindowWidening(unittest.TestCase):
             counts = {"1d": 1, "3d": 2, "7d": 6}
             return [
                 Article(
-                    title=f"{keyword} reservoir storage and snowpack runoff update {i}",
+                    # Distinct headline per window+index, so this fixture tests
+                    # re-assessment rather than title dedupe (covered separately).
+                    title=f"{keyword} reservoir storage and snowpack runoff, {window} report {i}",
                     url=f"https://example.com/{window}/{i}",
                     source="Example",
                     snippet="Streamflow forecasts and reservoir storage.",
@@ -252,10 +254,37 @@ class TestWindowWidening(unittest.TestCase):
         self.assertEqual(len(digest.sections[0].assessments), 1)
 
     def test_already_seen_articles_are_not_reassessed(self):
-        # 7d returns 6 unique URLs; 1d and 3d contribute 1 and 2 more.
+        # 1d contributes 1, 3d contributes 2, 7d contributes 6 — all distinct.
         digest = agent.run(self._config(per_keyword=99))
         urls = {a.article.url for a in digest.sections[0].assessments}
         self.assertEqual(len(urls), 9)
+
+    def test_syndicated_copies_collapse_across_windows(self):
+        # The real failure: the same wire story surfaced under WLKY in one
+        # window and CNN in another, and both reached the digest because the
+        # cross-window filter only compared URLs.
+        headline = "Historically low water level in two crucial US reservoirs"
+        by_window = {
+            "1d": [],
+            "3d": [Article(title=headline, url="https://wlky.example/a", source="WLKY")],
+            "7d": [Article(title=headline, url="https://cnn.example/b", source="CNN")],
+        }
+
+        def fake_search(keyword, window="1d", limit=30, timeout=20.0):
+            self.calls.append(window)
+            return [
+                Article(
+                    title=a.title, url=a.url, source=a.source,
+                    snippet="Reservoir storage fell to a record low.", keyword=keyword,
+                )
+                for a in by_window[window]
+            ]
+
+        sources.search = fake_search
+        agent.sources.search = fake_search
+
+        digest = agent.run(self._config())
+        self.assertEqual(len(digest.sections[0].assessments), 1)
 
 
 class TestEmail(unittest.TestCase):

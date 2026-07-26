@@ -181,6 +181,11 @@ def load_json_file(path: str) -> list[Article]:
     return articles
 
 
+def title_key(title: str) -> str:
+    """Normalized headline, for matching the same story across publishers."""
+    return re.sub(r"[^a-z0-9]+", "", title.lower())
+
+
 def dedupe(articles: list[Article]) -> list[Article]:
     """Drop repeats of the same story.
 
@@ -194,11 +199,11 @@ def dedupe(articles: list[Article]) -> list[Article]:
     seen_titles: set[str] = set()
     unique: list[Article] = []
     for article in articles:
-        title_key = re.sub(r"[^a-z0-9]+", "", article.title.lower())
-        if article.url in seen_urls or (title_key and title_key in seen_titles):
+        key = title_key(article.title)
+        if article.url in seen_urls or (key and key in seen_titles):
             continue
         seen_urls.add(article.url)
-        seen_titles.add(title_key)
+        seen_titles.add(key)
         unique.append(article)
     return unique
 

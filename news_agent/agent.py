@@ -42,7 +42,11 @@ def _search_and_assess(config: Config, keyword: str) -> tuple[list[Assessment], 
     wider windows. Articles already assessed are never re-assessed.
     """
     windows = [config.window] + [w for w in config.fallback_windows if w != config.window]
-    seen: set[str] = set()
+    # Tracked across windows, not just within one. dedupe() only sees a single
+    # window's results, so a wire story picked up under one publisher in the 3d
+    # window and another in the 7d window would otherwise both survive.
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
     assessments: list[Assessment] = []
     llm_used = False
 
@@ -50,8 +54,14 @@ def _search_and_assess(config: Config, keyword: str) -> tuple[list[Assessment], 
         found = sources.dedupe(
             sources.search(keyword, window=window, limit=config.max_candidates)
         )
-        fresh = [article for article in found if article.url not in seen]
-        seen.update(article.url for article in fresh)
+        fresh = []
+        for article in found:
+            key = sources.title_key(article.title)
+            if article.url in seen_urls or (key and key in seen_titles):
+                continue
+            seen_urls.add(article.url)
+            seen_titles.add(key)
+            fresh.append(article)
         log.info("%r: %d candidates in %s window (%d new)", keyword, len(found), window, len(fresh))
 
         if fresh:

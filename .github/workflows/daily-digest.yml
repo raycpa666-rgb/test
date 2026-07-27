@@ -2,8 +2,15 @@ name: Daily hydrology news digest
 
 on:
   schedule:
-    # 13:00 UTC ≈ 6am Pacific / 7am Mountain.
-    - cron: "0 13 * * *"
+    # 13:07 UTC ≈ 6am Pacific / 7am Mountain.
+    #
+    # Deliberately :07 rather than :00. GitHub queues every top-of-the-hour
+    # cron in the world at once, and this workflow's first scheduled run at
+    # "0 13 * * *" was delivered 3.5 hours late (13:00 -> 16:30 UTC), which
+    # turns a 6am briefing into a 9:30am one. Off-peak minutes are far less
+    # contended. GitHub still makes no delivery-time guarantee for scheduled
+    # workflows — see the README if you need a hard guarantee.
+    - cron: "7 13 * * *"
   workflow_dispatch:
     inputs:
       send:

@@ -87,10 +87,16 @@ optional. Entries without a `keyword` are matched to one by phrase.
 ## Running it daily
 
 A GitHub Actions workflow is included at `.github/workflows/daily-digest.yml`; it runs
-at 13:00 UTC each morning and needs these repository secrets: `ANTHROPIC_API_KEY`,
-`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, `EMAIL_TO`.
+at 13:07 UTC each morning and needs these repository secrets: `ANTHROPIC_API_KEY`,
+`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, `EMAIL_TO`. (`ANTHROPIC_API_KEY`
+is optional — without it the digest still sends, using keyword scoring.)
 
-Locally, cron works just as well:
+**Scheduled workflows are best-effort.** GitHub guarantees no delivery time for
+`schedule:` triggers, and under load they queue. This workflow's first scheduled run,
+then set to `0 13 * * *`, arrived 3.5 hours late. The cron sits at `:07` rather than
+`:00` to dodge the worst congestion, but if you need the digest to reliably land at a
+particular hour, run it from a machine you control instead — cron on any always-on box
+is the only option with a real guarantee:
 
 ```cron
 0 6 * * *  cd /path/to/repo && . .env && /usr/bin/python3 -m news_agent --send --quiet
